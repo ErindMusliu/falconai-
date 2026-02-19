@@ -1,32 +1,39 @@
 <?php
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
+
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit;
+}
 
 $data = json_decode(file_get_contents("php://input"), true);
 
-if (!isset($data["license_key"])) {
+if (!isset($data["license_key"]) || empty(trim($data["license_key"]))) {
     echo json_encode([
         "success" => false,
-        "message" => "Ju lutem jepni një kod aktivizimi."
+        "message" => "Ju lutem jepni një kod aktivizimi të vlefshëm."
     ]);
     exit;
 }
 
 $license_key = trim($data["license_key"]);
 
-$host     = "localhost";
+$host     = "127.0.0.1";
 $port     = "5432";
 $dbname   = "falconai_db";
 $user     = "postgres";
 $password = "FalconAi123!)";
 
-$connection_string = "host=$host port=$port dbname=$dbname user=$user password=$password";
+$connection_string = "host=$host port=$port dbname=$dbname user=$user password=$password sslmode=require";
 $dbconn = pg_connect($connection_string);
 
 if (!$dbconn) {
-    echo json_encode(["success" => false, "message" => "Gabim në lidhjen me serverin."]);
+    echo json_encode([
+        "success" => false, 
+        "message" => "Gabim në lidhjen me serverin e databazës."
+    ]);
     exit;
 }
 
@@ -48,7 +55,7 @@ if ($result && pg_num_rows($result) > 0) {
 } else {
     echo json_encode([
         "success" => false,
-        "message" => "Kodi i aktivizimit është i pasaktë ose i pavlefshëm."
+        "message" => "Kodi i aktivizimit është i pasaktë, i papaguar ose i pavlefshëm."
     ]);
 }
 
