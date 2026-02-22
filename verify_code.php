@@ -8,19 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
 error_reporting(0);
 
-$host     = "trolley.proxy.rlwy.net"; 
-$port     = "22626";
-$dbname   = "railway"; 
-$user     = "postgres";
-$password = "EKfRjcFXFPXNADxvjfuNQdkcZZxlGhEy"; 
-
-$connection_string = "host=$host port=$port dbname=$dbname user=$user password=$password sslmode=require";
-$db = pg_connect($connection_string);
-
-if (!$db) {
-    echo json_encode(["valid" => false, "message" => "Gabim në lidhjen me serverin"]);
-    exit;
-}
+include 'db.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
 $license = trim($data['license'] ?? $data['activation_code'] ?? '');
@@ -30,38 +18,38 @@ if (empty($license)) {
     exit;
 }
 
-$query = "SELECT id, email, plan, status FROM payments WHERE order_id = $1 OR status = 'paid' AND id IN (SELECT id FROM payments WHERE email=$1) LIMIT 1";
-$query = "SELECT id, email, plan, status FROM payments WHERE order_id = $1 LIMIT 1";
+try {
+    $query = "SELECT id, email, plan, status FROM payments WHERE license_key = ? LIMIT 1";
+    $stmt = $pdo->prepare($query);
+    $stmt->execute([$license]);
+    $row = $stmt->fetch();
 
-$query = "SELECT id, email, plan, status FROM payments WHERE order_id = $1 OR plan = $1 LIMIT 1"; 
-
-$query = "SELECT id, email, plan, status FROM payments WHERE order_id = $1 LIMIT 1";
-
-$result = pg_query_params($db, $query, array($license));
-
-if ($result && pg_num_rows($result) > 0) {
-    $row = pg_fetch_assoc($result);
-    
-    if ($row['status'] === 'paid') {
-        echo json_encode([
-            "valid" => true,
-            "message" => "Licenca u gjet me sukses",
-            "license_id" => (int)$row['id'],
-            "email" => $row['email'],
-            "plan" => $row['plan']
-        ]);
+    if ($row) {
+        if ($row['status'] === 'paid') {
+            echo json_encode([
+                "valid" => true,
+                "message" => "Licenca u gjet me sukses",
+                "license_id" => (int)$row['id'],
+                "email" => $row['email'],
+                "plan" => $row['plan']
+            ]);
+        } else {
+            echo json_encode([
+                "valid" => false, 
+                "message" => "Kjo licencë nuk është e paguar."
+            ]);
+        }
     } else {
         echo json_encode([
             "valid" => false, 
-            "message" => "Kjo licencë nuk është e paguar."
+            "message" => "Kodi është i pasaktë ose nuk ekziston."
         ]);
     }
-} else {
+
+} catch (Exception $e) {
     echo json_encode([
         "valid" => false, 
-        "message" => "Kodi është i pasaktë ose nuk ekziston në historikun e pagesave."
+        "message" => "Gabim teknik gjatë verifikimit."
     ]);
 }
-
-pg_close($db);
 ?>
