@@ -1,60 +1,88 @@
 <?php
-header("Content-Type: text/plain");
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
 
-$host     = "trolley.proxy.rlwy.net"; 
-$port     = "22626";
+$host     = "switchyard.proxy.rlwy.net"; 
+$port     = "22684";
 $dbname   = "railway"; 
 $user     = "postgres";
-$password = "EKfRjcFXFPXNADxvjfuNQdkcZZxlGhEy"; 
+$password = "igbUlyPXVgpusTwXgtbwIkpwXoxcpFPd"; 
 
-$connection_string = "host=$host port=$port dbname=$dbname user=$user password=$password sslmode=require";
-$conn = pg_connect($connection_string);
+try {
+    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname;sslmode=require";
+    $pdo = new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 
-if (!$conn) {
-    die("GABIM: Nuk mund të lidhem me databazën në Railway.");
-}
+    $sql = "
+    DROP TABLE IF EXISTS activation_codes CASCADE;
+    DROP TABLE IF EXISTS subscriptions CASCADE;
+    DROP TABLE IF EXISTS payments CASCADE;
+    DROP TABLE IF EXISTS devices CASCADE;
+    DROP TABLE IF EXISTS customers CASCADE;
+    DROP TABLE IF EXISTS packages CASCADE;
 
-echo "Lidhja me Railway u realizua me sukses...\n\n";
-
-$queries = [
-    "CREATE TABLE IF NOT EXISTS packages (
+    CREATE TABLE packages (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL,
+        name VARCHAR(100) NOT NULL UNIQUE,
         price NUMERIC(6,2) NOT NULL,
         duration_days INTEGER NOT NULL,
-        max_devices INTEGER DEFAULT 2
-    )",
+        max_devices INTEGER NOT NULL
+    );
 
-    "CREATE TABLE IF NOT EXISTS activation_code (
-        id BIGSERIAL PRIMARY KEY,
-        code VARCHAR(30) UNIQUE NOT NULL,
-        package_id INTEGER NOT NULL REFERENCES packages(id),
-        device_id VARCHAR(100), -- ID e pajisjes Android/TV
-        used BOOLEAN DEFAULT false,
-        expires_at TIMESTAMP,
+    CREATE TABLE customers (
+        id SERIAL PRIMARY KEY,
+        full_name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )",
+    );
 
-    "CREATE TABLE IF NOT EXISTS payments (
+    CREATE TABLE devices (
+        id SERIAL PRIMARY KEY,
+        device_uid VARCHAR(50) NOT NULL UNIQUE,
+        activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE payments (
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) NOT NULL,
         plan VARCHAR(255) NOT NULL,
-        order_id VARCHAR(255) UNIQUE NOT NULL,
+        order_id VARCHAR(255) NOT NULL UNIQUE,
         status VARCHAR(20) DEFAULT 'paid',
-        activation_code_id BIGINT,
+        license_key VARCHAR(255) NOT NULL UNIQUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )"
-];
+    );
 
-foreach ($queries as $sql) {
-    $result = pg_query($conn, $sql);
-    if ($result) {
-        echo "[SUKSES] Ekzekutimi: " . substr(str_replace("\n", " ", $sql), 0, 50) . "...\n";
-    } else {
-        echo "[GABIM] " . pg_last_error($conn) . "\n";
-    }
+    CREATE TABLE activation_codes (
+        id BIGSERIAL PRIMARY KEY,
+        code VARCHAR(30) NOT NULL UNIQUE,
+        package_id INTEGER NOT NULL REFERENCES packages(id),
+        customer_id INTEGER REFERENCES customers(id),
+        device_id VARCHAR(50),
+        used BOOLEAN DEFAULT FALSE,
+        expires_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE subscriptions (
+        id SERIAL PRIMARY KEY,
+        device_id INTEGER NOT NULL REFERENCES devices(id),
+        package_id INTEGER NOT NULL REFERENCES packages(id),
+        customer_id INTEGER REFERENCES customers(id),
+        starts_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        expires_at TIMESTAMP NOT NULL,
+        active BOOLEAN DEFAULT TRUE
+    );
+
+    INSERT INTO packages (name, price, duration_days, max_devices) VALUES 
+    ('Basic', 4.99, 30, 1),
+    ('Standard', 9.99, 30, 2),
+    ('Pro', 14.99, 30, 3),
+    ('Premium', 19.99, 30, 4);
+    ";
+
+    $pdo->exec($sql);
+    echo "✅ Databaza u instalua me sukses në hostin e ri!";
+
+} catch (PDOException $e) {
+    echo "❌ Gabim: " . $e->getMessage();
 }
-
-pg_close($conn);
-echo "\nStruktura u krijua! Tani mund të përdorni sistemin.";
 ?>
