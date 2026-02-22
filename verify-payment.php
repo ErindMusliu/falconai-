@@ -15,6 +15,9 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 header("Content-Type: application/json; charset=UTF-8");
 
+error_reporting(E_ALL);
+ini_set('display_errors', 0);
+
 $host     = "trolley.proxy.rlwy.net"; 
 $port     = "22626";
 $dbname   = "railway"; 
@@ -25,7 +28,7 @@ $connection_string = "host=$host port=$port dbname=$dbname user=$user password=$
 $db = pg_connect($connection_string);
 
 if (!$db) {
-    echo json_encode(["success" => false, "message" => "Lidhja dështoi"]);
+    echo json_encode(["success" => false, "message" => "Database connection failed"]);
     exit;
 }
 
@@ -33,13 +36,13 @@ $input = file_get_contents("php://input");
 $data = json_decode($input, true);
 
 if (!$data) {
-    echo json_encode(["success" => false, "message" => "Gati per te marre te dhena nga Netlify."]);
+    echo json_encode(["success" => false, "message" => "No data received"]);
     exit;
 }
 
-$orderID   = $data['orderID'] ?? 'ID-MUNGON';
+$orderID   = $data['orderID'] ?? 'ID-' . time();
 $planName  = $data['plan'] ?? 'Basic';
-$email     = $data['email'] ?? 'pa-email@test.com';
+$email     = $data['email'] ?? 'no-email@falcon.ai';
 
 try {
     pg_query($db, "BEGIN");
