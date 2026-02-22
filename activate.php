@@ -6,6 +6,7 @@ header("Access-Control-Allow-Headers: Content-Type");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
+
 $data = json_decode(file_get_contents("php://input"), true);
 
 $license_key = trim($data["activation_code"] ?? $data["license_key"] ?? "");
