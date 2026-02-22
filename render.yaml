@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: falconai-backend
+    env: php
+    plan: free
+    buildCommand: composer install
+    startCommand: apache2-foreground
