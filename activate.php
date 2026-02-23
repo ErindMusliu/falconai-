@@ -16,11 +16,11 @@ if (empty($license_key) || empty($device_id)) {
     exit;
 }
 
-$host     = "trolley.proxy.rlwy.net"; 
-$port     = "22626";
-$dbname   = "railway"; 
-$user     = "postgres";
-$password = "EKfRjcFXFPXNADxvjfuNQdkcZZxlGhEy"; 
+$host     = getenv('DB_HOST') ?: "trolley.proxy.rlwy.net"; 
+$port     = getenv('DB_PORT') ?: "22626";
+$dbname   = getenv('DB_NAME') ?: "railway"; 
+$user     = getenv('DB_USER') ?: "postgres";
+$password = getenv('DB_PASS') ?: "EKfRjcFXFPXNADxvjfuNQdkcZZxlGhEy"; 
 
 $connection_string = "host=$host port=$port dbname=$dbname user=$user password=$password sslmode=require";
 $dbconn = pg_connect($connection_string);
@@ -30,55 +30,62 @@ if (!$dbconn) {
     exit;
 }
 
-$query = "SELECT ac.*, p.duration_days 
-          FROM activation_code ac 
-          JOIN packages p ON ac.package_id = p.id 
-          WHERE ac.code = $1 LIMIT 1";
+try {
+    $query = "SELECT ac.*, p.duration_days, p.name AS package_name 
+              FROM activation_codes ac 
+              JOIN packages p ON ac.package_id = p.id 
+              WHERE ac.code = $1 LIMIT 1";
 
-$result = pg_query_params($dbconn, $query, array($license_key));
+    $result = pg_query_params($dbconn, $query, array($license_key));
 
-if ($result && pg_num_rows($result) > 0) {
-    $row = pg_fetch_assoc($result);
-    
-    $is_used = ($row['used'] === 't' || $row['used'] == 1 || $row['used'] === true);
+    if ($result && pg_num_rows($result) > 0) {
+        $row = pg_fetch_assoc($result);
+        
+        $is_used = ($row['used'] === 't' || $row['used'] == 1 || $row['used'] === true);
 
-    if ($is_used) {
-        if (trim($row['device_id']) !== $device_id) {
-            echo json_encode(["success" => false, "message" => "Ky kod është i lidhur me një pajisje tjetër!"]);
-            exit;
-        }
+        if ($is_used) {
+            if (trim($row['device_id']) !== $device_id) {
+                echo json_encode(["success" => false, "message" => "Ky kod është i lidhur me një pajisje tjetër!"]);
+                exit;
+            }
 
-        $expiry_timestamp = strtotime($row['expires_at']);
-        if (time() > $expiry_timestamp) {
-            echo json_encode(["success" => false, "message" => "Licenca juaj ka skaduar më " . $row['expires_at']]);
-            exit;
-        }
+            $expiry_timestamp = strtotime($row['expires_at']);
+            if (time() > $expiry_timestamp) {
+                echo json_encode(["success" => false, "message" => "Licenca juaj ka skaduar."]);
+                exit;
+            }
 
-        echo json_encode([
-            "success" => true,
-            "message" => "Mirëseerdhët përsëri!",
-            "expires_at" => $row['expires_at']
-        ]);
-
-    } else {
-        $duration = (int)$row['duration_days'];
-        $expiry_date = date('Y-m-d H:i:s', strtotime("+$duration days"));
-
-        $update_query = "UPDATE activation_code SET used = true, device_id = $1, expires_at = $2 WHERE code = $3";
-        $update_result = pg_query_params($dbconn, $update_query, array($device_id, $expiry_date, $license_key));
-
-        if ($update_result) {
             echo json_encode([
                 "success" => true,
-                "message" => "Aktivizimi u kreu! Vlefshëm deri më $expiry_date",
-                "expires_at" => $expiry_date
+                "message" => "Mirëseerdhët përsëri!",
+                "expires_at" => $row['expires_at'],
+                "package_name" => $row['package_name']
             ]);
+
         } else {
-            echo json_encode(["success" => false, "message" => "Dështoi përditësimi i licencës."]);
+            $duration = (int)$row['duration_days'];
+            $expiry_date = date('Y-m-d H:i:s', strtotime("+$duration days"));
+
+            $update_query = "UPDATE activation_codes SET used = true, device_id = $1, expires_at = $2 WHERE code = $3";
+            $update_result = pg_query_params($dbconn, $update_query, array($device_id, $expiry_date, $license_key));
+
+            if ($update_result) {
+                echo json_encode([
+                    "success" => true,
+                    "message" => "Aktivizimi u krye me sukses!",
+                    "expires_at" => $expiry_date,
+                    "package_name" => $row['package_name']
+                ]);
+            } else {
+                echo json_encode(["success" => false, "message" => "Gabim gjatë përditësimit të licencës."]);
+            }
         }
+    } else {
+        echo json_encode(["success" => false, "message" => "Kodi i aktivizimit nuk ekziston."]);
     }
-} else {
-    echo json_encode(["success" => false, "message" => "Kodi i aktivizimit nuk ekziston."]);
+
+} catch (Exception $e) {
+    echo json_encode(["success" => false, "message" => "Gabim i brendshëm i serverit."]);
 }
 
 pg_close($dbconn);
