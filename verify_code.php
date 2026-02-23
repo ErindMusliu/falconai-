@@ -7,49 +7,63 @@ header("Access-Control-Allow-Headers: Content-Type");
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
 error_reporting(0);
-
 include 'db.php';
 
 $data = json_decode(file_get_contents("php://input"), true);
-$license = trim($data['license'] ?? $data['activation_code'] ?? '');
+
+$license = trim($data['activation_code'] ?? '');
+$deviceId = trim($data['device_id'] ?? '');
 
 if (empty($license)) {
-    echo json_encode(["valid" => false, "message" => "Ju lutem vendosni kodin."]);
+    echo json_encode(["success" => false, "message" => "Ju lutem vendosni kodin."]);
     exit;
 }
 
 try {
-    $query = "SELECT id, email, plan, status FROM payments WHERE license_key = ? LIMIT 1";
+    $pdo->beginTransaction();
+
+    $query = "SELECT ac.*, p.name as package_name 
+              FROM activation_codes ac 
+              JOIN packages p ON ac.package_id = p.id 
+              WHERE ac.code = ? LIMIT 1";
     $stmt = $pdo->prepare($query);
     $stmt->execute([$license]);
     $row = $stmt->fetch();
 
     if ($row) {
-        if ($row['status'] === 'paid') {
-            echo json_encode([
-                "valid" => true,
-                "message" => "Licenca u gjet me sukses",
-                "license_id" => (int)$row['id'],
-                "email" => $row['email'],
-                "plan" => $row['plan']
-            ]);
-        } else {
-            echo json_encode([
-                "valid" => false, 
-                "message" => "Kjo licencë nuk është e paguar."
-            ]);
+        if ($row['used'] && $row['device_id'] !== $deviceId) {
+            echo json_encode(["success" => false, "message" => "Ky kod eshte i lidhur me nje pajisje tjeter."]);
+            $pdo->rollBack();
+            exit;
         }
-    } else {
+
+        if (!$row['used']) {
+            $stmtDev = $pdo->prepare("INSERT INTO devices (device_uid) VALUES (?) ON CONFLICT (device_uid) DO NOTHING");
+            $stmtDev->execute([$deviceId]);
+
+            $update = $pdo->prepare("UPDATE activation_codes SET used = true, device_id = ? WHERE code = ?");
+            $update->execute([$deviceId, $license]);
+            
+            $stmtSub = $pdo->prepare("INSERT INTO subscriptions (device_id, package_id, customer_id, expires_at) 
+                                      SELECT d.id, ?, ?, ? FROM devices d WHERE d.device_uid = ? LIMIT 1");
+            $stmtSub->execute([$row['package_id'], $row['customer_id'], $row['expires_at'], $deviceId]);
+        }
+
+        $pdo->commit();
+
         echo json_encode([
-            "valid" => false, 
-            "message" => "Kodi është i pasaktë ose nuk ekziston."
+            "success" => true,
+            "message" => "Aktivizimi u krye me sukses",
+            "expires_at" => $row['expires_at'],
+            "package_name" => $row['package_name']
         ]);
+
+    } else {
+        echo json_encode(["success" => false, "message" => "Kodi është i pasaktë."]);
     }
 
 } catch (Exception $e) {
-    echo json_encode([
-        "valid" => false, 
-        "message" => "Gabim teknik gjatë verifikimit."
-    ]);
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    echo json_encode(["success" => false, "message" => "Gabim teknik: " . $e->getMessage()]);
 }
 ?>
