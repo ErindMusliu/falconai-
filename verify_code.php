@@ -1,4 +1,3 @@
-
 <?php
 ini_set('display_errors', 0);
 header("Content-Type: application/json");
@@ -41,7 +40,7 @@ try {
     if ($is_used) {
         if (!empty($device_id) && trim($row['device_id']) !== $device_id) {
             echo json_encode(["success" => false, "message" => "Ky kod është aktiv në një pajisje tjetër."]);
-        } else if (time() > strtotime($row['expires_at'])) {
+        } else if (!empty($row['expires_at']) && time() > strtotime($row['expires_at'])) {
             echo json_encode(["success" => false, "message" => "Licenca ka skaduar."]);
         } else {
             $pdo->prepare("UPDATE devices SET last_login = NOW() WHERE device_id = ?")->execute([$device_id]);
@@ -64,7 +63,7 @@ try {
 
         try {
             $pdo->beginTransaction();
-
+            
             $update = $pdo->prepare("UPDATE activation_codes SET used = true, device_id = :dev, expires_at = :exp WHERE code = :code");
             $update->execute([
                 'dev' => $device_id,
@@ -77,11 +76,12 @@ try {
                        ON CONFLICT (device_id) DO UPDATE SET last_login = NOW()";
             $pdo->prepare($devSql)->execute(['dev' => $device_id]);
 
-            $subSql = "INSERT INTO subscriptions (customer_id, package_id, start_date, end_date, status) 
-                       VALUES (:cust, :pkg, NOW(), :exp, 'active')";
+            $subSql = "INSERT INTO subscriptions (customer_id, package_id, device_id, start_date, end_date, status) 
+                       VALUES (:cust, :pkg, :dev, NOW(), :exp, 'active')";
             $pdo->prepare($subSql)->execute([
                 'cust' => $row['customer_id'],
                 'pkg'  => $row['package_id'],
+                'dev'  => $device_id,
                 'exp'  => $expiry_date
             ]);
 
@@ -96,11 +96,11 @@ try {
 
         } catch (Exception $e) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
-            echo json_encode(["success" => false, "message" => "Gabim gjatë procesimit: " . $e->getMessage()]);
+            echo json_encode(["success" => false, "message" => "Gabim procesimi: " . $e->getMessage()]);
         }
     }
 
 } catch (PDOException $e) {
-    echo json_encode(["success" => false, "message" => "Gabim DB: " . $e->getMessage()]);
+    echo json_encode(["success" => false, "message" => "Gabim Serveri: " . $e->getMessage()]);
 }
 ?>
