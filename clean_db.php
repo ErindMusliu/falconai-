@@ -1,18 +1,21 @@
 <?php
-$host = getenv('DB_HOST') ?: 'localhost';
-$port = getenv('DB_PORT') ?: '5432';
-$user = getenv('DB_USERNAME') ?: 'postgres';
-$pass = getenv('DB_PASSWORD') ?: '';
-$db   = getenv('DB_DATABASE') ?: 'databaza_jote';
+
+$host = 'dpg-d6bllv2li9vc73dkbbhg-a.oregon-postgres.render.com';
+$port = '5432';
+$db   = 'falconai_db_k76d';
+$user = 'falconai_db_k76d_user';
+$pass = 'sYYhitKQLAMwkELMc5V6SdKRWvFBjOZC';
 
 try {
     $dsn = "pgsql:host=$host;port=$port;dbname=$db";
+    
     $pdo = new PDO($dsn, $user, $pass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
     ]);
 
-    echo "<h2>Duke pastruar PostgreSQL...</h2><hr>";
-    
+    echo "<h2 style='color:blue;'>Lidhja me Render PostgreSQL u arrit me sukses!</h2>";
+    echo "<h4>Duke filluar procesin e pastrimit...</h4><hr>";
+
     $query = "SELECT table_name FROM information_schema.tables 
               WHERE table_schema = 'public' 
               AND table_type = 'BASE TABLE'";
@@ -25,16 +28,16 @@ try {
         if ($table !== 'packages' && $table !== 'migrations') {
             $pdo->exec("TRUNCATE TABLE \"$table\" RESTART IDENTITY CASCADE");
             
-            echo "✅ Tabela [<b>$table</b>] u fshi dhe ID-ja u resetua.<br>";
+            echo "✅ Tabela [<b>$table</b>] u pastrua dhe ID-të u resetuan.<br>";
             $count++;
         } else {
-            echo "🛡️ Tabela [<b>$table</b>] u ruajt e paprekur.<br>";
+            echo "🛡️ Tabela [<b>$table</b>] u ruajt (Përjashtuar nga fshirja).<br>";
         }
     }
 
-    echo "<hr><h3>Përfundoi! U pastruan $count tabela.</h3>";
+    echo "<hr><h3 style='color:green;'>Përfundoi! U pastruan gjithsej $count tabela.</h3>";
 
 } catch (PDOException $e) {
-    die("<h3 style='color:red;'>Gabim:</h3> " . $e->getMessage());
+    die("<h3 style='color:red;'>Gabim gjatë lidhjes:</h3> " . $e->getMessage());
 }
 ?>
