@@ -1,6 +1,7 @@
 {
-  "require": {
-    "php": ">=8.0",
-    "ext-pgsql": "*"
-  }
+    "require": {
+        "php": ">=8.0",
+        "ext-pgsql": "*",
+        "ext-pdo_pgsql": "*"
+    }
 }
