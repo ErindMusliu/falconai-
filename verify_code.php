@@ -7,6 +7,8 @@ header("Access-Control-Allow-Headers: Content-Type");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
+include 'db.php';
+
 $input = file_get_contents("php://input");
 $data = json_decode($input, true);
 
@@ -18,18 +20,7 @@ if (empty($license_key)) {
     exit;
 }
 
-$db_host = "dpg-d6bllv2li9vc73dkbbhg-a";
-$db_user = "falconai_db_k76d_user";
-$db_pass = "sYYhitKQLAMwkELMc5V6SdKRWvFBjOZC";
-$db_name = "falconai_db_k76d";
-
 try {
-    $dsn = "pgsql:host=$db_host;port=5432;dbname=$db_name;sslmode=disable";
-    $pdo = new PDO($dsn, $db_user, $db_pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC
-    ]);
-
     $sql = "SELECT ac.*, p.duration_days, p.name AS package_name 
             FROM activation_codes ac 
             JOIN packages p ON ac.package_id = p.id 
@@ -37,7 +28,7 @@ try {
     
     $stmt = $pdo->prepare($sql);
     $stmt->execute(['code' => $license_key]);
-    $row = $stmt->fetch();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) {
         echo json_encode(["success" => false, "message" => "Kodi nuk u gjet në sistem."]);
@@ -52,20 +43,18 @@ try {
         } else if (time() > strtotime($row['expires_at'])) {
             echo json_encode(["success" => false, "message" => "Licenca ka skaduar."]);
         } else {
-            if (!empty($device_id)) {
-                $pdo->prepare("UPDATE devices SET last_login = NOW() WHERE device_id = ?")->execute([$device_id]);
-            }
+            $pdo->prepare("UPDATE devices SET last_login = NOW() WHERE device_id = ?")->execute([$device_id]);
             
             echo json_encode([
                 "success" => true,
-                "message" => "Mirëseerdhët përsëri!",
+                "message" => "Mirëseerdhët!",
                 "expires_at" => $row['expires_at'],
                 "package_name" => $row['package_name']
             ]);
         }
     } else {
         if (empty($device_id)) {
-            echo json_encode(["success" => false, "message" => "Kodi është i vlefshëm. Shkruaj ID-në e pajisjes për aktivizim."]);
+            echo json_encode(["success" => false, "message" => "Jepni ID-në e pajisjes për aktivizim."]);
             exit;
         }
 
@@ -82,15 +71,16 @@ try {
                 'code' => $license_key
             ]);
 
-            $deviceSql = "INSERT INTO devices (device_id, last_login) VALUES (:dev, NOW()) 
-                          ON CONFLICT (device_id) DO UPDATE SET last_login = NOW()";
-            $pdo->prepare($deviceSql)->execute(['dev' => $device_id]);
+            $devSql = "INSERT INTO devices (device_id, device_uid, last_login, created_at) 
+                       VALUES (:dev, :dev, NOW(), NOW()) 
+                       ON CONFLICT (device_id) DO UPDATE SET last_login = NOW()";
+            $pdo->prepare($devSql)->execute(['dev' => $device_id]);
 
             $subSql = "INSERT INTO subscriptions (customer_id, package_id, start_date, end_date, status) 
                        VALUES (:cust, :pkg, NOW(), :exp, 'active')";
             $pdo->prepare($subSql)->execute([
-                'cust' => $row['customer_id'], 
-                'pkg'  => $row['package_id'], 
+                'cust' => $row['customer_id'],
+                'pkg'  => $row['package_id'],
                 'exp'  => $expiry_date
             ]);
 
@@ -98,7 +88,7 @@ try {
 
             echo json_encode([
                 "success" => true,
-                "message" => "Aktivizimi u krye me sukses dhe abonimi u regjistrua!",
+                "message" => "Aktivizimi u krye me sukses!",
                 "expires_at" => $expiry_date,
                 "package_name" => $row['package_name']
             ]);
