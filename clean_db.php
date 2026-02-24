@@ -1,45 +1,40 @@
 <?php
-$host = getenv('DB_HOST') ?: 'localhost'; 
-$user = getenv('DB_USERNAME') ?: 'emri_yt';
-$pass = getenv('DB_PASSWORD') ?: 'fjalekalimi_yt';
-$db   = getenv('DB_DATABASE') ?: 'emri_databazes';
+$host = getenv('DB_HOST') ?: 'localhost';
+$port = getenv('DB_PORT') ?: '5432';
+$user = getenv('DB_USERNAME') ?: 'postgres';
+$pass = getenv('DB_PASSWORD') ?: '';
+$db   = getenv('DB_DATABASE') ?: 'databaza_jote';
 
-$security_key = "12345"; 
+try {
+    $dsn = "pgsql:host=$host;port=$port;dbname=$db";
+    $pdo = new PDO($dsn, $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+    ]);
 
-if (!isset($_GET['key']) || $_GET['key'] !== $security_key) {
-    die("Akses i ndaluar! Duhet çelësi i sigurisë.");
-}
+    echo "<h2>Duke pastruar PostgreSQL...</h2><hr>";
+    
+    $query = "SELECT table_name FROM information_schema.tables 
+              WHERE table_schema = 'public' 
+              AND table_type = 'BASE TABLE'";
+    
+    $stmt = $pdo->query($query);
+    $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-$conn = new mysqli($host, $user, $pass, $db);
-
-if ($conn->connect_error) {
-    die("Lidhja dështoi: " . $conn->connect_error);
-}
-
-$conn->query('SET FOREIGN_KEY_CHECKS = 0');
-
-$tables = [];
-$result = $conn->query("SHOW TABLES");
-while ($row = $result->fetch_array()) {
-    $tables[] = $row[0];
-}
-
-echo "<h2>Duke pastruar databazën në Render...</h2><hr>";
-
-foreach ($tables as $table) {
-    if ($table !== 'packages' && $table !== 'migrations') {
-        if ($conn->query("TRUNCATE TABLE `$table`")) {
-            echo "✅ Tabela [<b>$table</b>] u fshi.<br>";
+    $count = 0;
+    foreach ($tables as $table) {
+        if ($table !== 'packages' && $table !== 'migrations') {
+            $pdo->exec("TRUNCATE TABLE \"$table\" RESTART IDENTITY CASCADE");
+            
+            echo "✅ Tabela [<b>$table</b>] u fshi dhe ID-ja u resetua.<br>";
+            $count++;
         } else {
-            echo "❌ Gabim te $table: " . $conn->error . "<br>";
+            echo "🛡️ Tabela [<b>$table</b>] u ruajt e paprekur.<br>";
         }
-    } else {
-        echo "🛡️ Tabela [<b>$table</b>] u ruajt.<br>";
     }
+
+    echo "<hr><h3>Përfundoi! U pastruan $count tabela.</h3>";
+
+} catch (PDOException $e) {
+    die("<h3 style='color:red;'>Gabim:</h3> " . $e->getMessage());
 }
-
-$conn->query('SET FOREIGN_KEY_CHECKS = 1');
-$conn->close();
-
-echo "<hr><h3>Procesi përfundoi.</h3>";
 ?>
