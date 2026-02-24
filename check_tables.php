@@ -1,72 +1,99 @@
 <?php
-include 'db.php';
+ini_set('display_errors', 0);
+header("Content-Type: application/json");
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type");
 
-echo "<!DOCTYPE html>
-<html>
-<head>
-    <title>Falcon AI - Database Explorer</title>
-    <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f9f9f9; padding: 20px; }
-        .table-container { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 30px; overflow-x: auto; }
-        h2 { color: #2c3e50; border-left: 5px solid #3498db; padding-left: 10px; text-transform: uppercase; font-size: 18px; }
-        table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-        th, td { border: 1px solid #eee; padding: 12px; text-align: left; font-size: 14px; }
-        th { background-color: #3498db; color: white; }
-        tr:nth-child(even) { background-color: #f2f2f2; }
-        tr:hover { background-color: #e9f5ff; }
-        .empty { color: #888; font-style: italic; }
-        .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .badge-paid { background: #d4edda; color: #155724; }
-        .badge-used { background: #f8d7da; color: #721c24; }
-    </style>
-</head>
-<body>
-    <h1>🚀 Falcon AI - Paneli i Kontrollit të Tabelave</h1>";
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
-try {
-    $stmtTables = $pdo->query("SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public' ORDER BY tablename");
-    $tables = $stmtTables->fetchAll(PDO::FETCH_COLUMN);
+$input = file_get_contents("php://input");
+$data = json_decode($input, true);
 
-    if (empty($tables)) {
-        echo "<div class='table-container'><p class='empty'>Nuk u gjet asnjë tabelë në databazë.</p></div>";
-    } else {
-        foreach ($tables as $table) {
-            echo "<div class='table-container'>";
-            echo "<h2>Tabela: $table</h2>";
+$license_key = trim($data["activation_code"] ?? $_GET['code'] ?? "");
+$device_id = trim($data["device_id"] ?? $_GET['device'] ?? "");
 
-            $stmtData = $pdo->query("SELECT * FROM \"$table\"");
-            $rows = $stmtData->fetchAll(PDO::FETCH_ASSOC);
-
-            if (count($rows) > 0) {
-                echo "<table><thead><tr>";
-                foreach (array_keys($rows[0]) as $col) {
-                    echo "<th>" . htmlspecialchars($col) . "</th>";
-                }
-                echo "</tr></thead><tbody>";
-
-                foreach ($rows as $row) {
-                    echo "<tr>";
-                    foreach ($row as $key => $val) {
-                        $cellValue = $val;
-                        if ($val === true || $val === 'true') $cellValue = "<span class='badge badge-used'>PO</span>";
-                        if ($val === false || $val === 'false') $cellValue = "<span class='badge badge-paid'>JO</span>";
-                        if ($val === 'paid') $cellValue = "<span class='badge badge-badge-paid'>E PAGUAR</span>";
-                        
-                        echo "<td>" . $cellValue . "</td>";
-                    }
-                    echo "</tr>";
-                }
-                echo "</tbody></table>";
-            } else {
-                echo "<p class='empty'>Kjo tabelë është aktualisht bosh.</p>";
-            }
-            echo "</div>";
-        }
-    }
-} catch (Exception $e) {
-    echo "<div style='color:red; background:#fff1f1; padding:20px; border-radius:8px;'>
-            <b>GABIM KRITIK:</b> " . htmlspecialchars($e->getMessage()) . "
-          </div>";
+if (empty($license_key)) {
+    echo json_encode(["success" => false, "message" => "Mungon kodi i aktivizimit."]);
+    exit;
 }
 
-echo "</body></html>";
+include 'db.php';
+
+try {
+    $sql = "SELECT ac.*, p.duration_days, p.name AS package_name 
+            FROM activation_codes ac 
+            JOIN packages p ON ac.package_id = p.id 
+            WHERE ac.code = :code LIMIT 1";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute(['code' => $license_key]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$row) {
+        echo json_encode(["success" => false, "message" => "Kodi nuk u gjet."]);
+        exit;
+    }
+
+    $is_used = ($row['used'] === 't' || $row['used'] == 1 || $row['used'] === true);
+
+    if ($is_used) {
+        if (!empty($device_id) && trim($row['device_id']) !== $device_id) {
+            echo json_encode(["success" => false, "message" => "Ky kod është aktiv në një pajisje tjetër."]);
+        } else if (time() > strtotime($row['expires_at'])) {
+            echo json_encode(["success" => false, "message" => "Licenca ka skaduar."]);
+        } else {
+            $pdo->prepare("UPDATE devices SET last_login = NOW() WHERE device_id = ?")->execute([$device_id]);
+            
+            echo json_encode([
+                "success" => true,
+                "message" => "Mirëseerdhët!",
+                "expires_at" => $row['expires_at'],
+                "package_name" => $row['package_name']
+            ]);
+        }
+    } else {
+        if (empty($device_id)) {
+            echo json_encode(["success" => false, "message" => "ID e pajisjes kërkohet për aktivizim."]);
+            exit;
+        }
+
+        $duration = $row['duration_days'] ?? 30;
+        $expiry_date = date('Y-m-d H:i:s', strtotime("+$duration days"));
+
+        try {
+            $pdo->beginTransaction();
+
+            $update = $pdo->prepare("UPDATE activation_codes SET used = true, device_id = :dev, expires_at = :exp WHERE code = :code");
+            $update->execute(['dev' => $device_id, 'exp' => $expiry_date, 'code' => $license_key]);
+
+            $devSql = "INSERT INTO devices (device_id, last_login) VALUES (:dev, NOW()) 
+                       ON CONFLICT (device_id) DO UPDATE SET last_login = NOW()";
+            $pdo->prepare($devSql)->execute(['dev' => $device_id]);
+
+            $subSql = "INSERT INTO subscriptions (customer_id, package_id, start_date, end_date, status) 
+                       VALUES (:cust, :pkg, NOW(), :exp, 'active')";
+            $pdo->prepare($subSql)->execute([
+                'cust' => $row['customer_id'],
+                'pkg'  => $row['package_id'],
+                'exp'  => $expiry_date
+            ]);
+
+            $pdo->commit();
+
+            echo json_encode([
+                "success" => true,
+                "message" => "Aktivizimi u krye! Pajisja dhe abonimi u regjistruan.",
+                "expires_at" => $expiry_date,
+                "package_name" => $row['package_name']
+            ]);
+
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            echo json_encode(["success" => false, "message" => "Gabim gjatë procesimit: " . $e->getMessage()]);
+        }
+    }
+} catch (PDOException $e) {
+    echo json_encode(["success" => false, "message" => "Gabim DB: " . $e->getMessage()]);
+}
+?>
