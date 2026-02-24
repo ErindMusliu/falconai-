@@ -1,7 +1,4 @@
 <?php
-ini_set('display_errors', 0);
-error_reporting(E_ALL);
-
 header("Content-Type: application/json");
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
@@ -16,84 +13,69 @@ $license_key = trim($data["activation_code"] ?? $_GET['code'] ?? "");
 $device_id = trim($data["device_id"] ?? $_GET['device'] ?? "");
 
 if (empty($license_key)) {
-    echo json_encode([
-        "success" => false, 
-        "message" => "Mungon kodi! Përdor URL: verify_code.php?code=KODI_KETU&device=ID_PAJISJES"
-    ]);
+    echo json_encode(["success" => false, "message" => "Mungon kodi."]);
     exit;
 }
 
-$host     = getenv('DB_HOST') ?: "trolley.proxy.rlwy.net"; 
-$port     = getenv('DB_PORT') ?: "22626";
-$dbname   = getenv('DB_NAME') ?: "railway"; 
-$user     = getenv('DB_USER') ?: "postgres";
-$password = getenv('DB_PASS') ?: "EKfRjcFXFPXNADxvjfuNQdkcZZxlGhEy"; 
+$db_url = getenv('DATABASE_URL');
 
-if (!function_exists('pg_connect')) {
-    echo json_encode(["success" => false, "message" => "Moduli pg_connect mungon në server."]);
-    exit;
-}
-
-$connection_string = "host=$host port=$port dbname=$dbname user=$user password=$password sslmode=require";
-$dbconn = @pg_connect($connection_string);
-
-if (!$dbconn) {
-    echo json_encode(["success" => false, "message" => "Lidhja me DB dështoi."]);
-    exit;
+if ($db_url) {
+    $dbopts = parse_url($db_url);
+    $host = $dbopts["host"];
+    $port = $dbopts["port"];
+    $user = $dbopts["user"];
+    $pass = $dbopts["pass"];
+    $dbname = ltrim($dbopts["path"], '/');
+} else {
+    $host     = getenv('DB_HOST') ?: "HOSTI_YT_I_RI"; 
+    $port     = getenv('DB_PORT') ?: "5432";
+    $dbname   = getenv('DB_NAME') ?: "EMRI_I_DB"; 
+    $user     = getenv('DB_USER') ?: "USERI_I_RI";
+    $password = getenv('DB_PASS') ?: "PASSWORD_I_RI"; 
 }
 
 try {
-    $query = "SELECT ac.*, p.duration_days, p.name AS package_name 
-              FROM activation_codes ac 
-              JOIN packages p ON ac.package_id = p.id 
-              WHERE ac.code = $1 LIMIT 1";
+    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname;sslmode=require";
+    $pdo = new PDO($dsn, $user, $password, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
+    ]);
 
-    $result = pg_query_params($dbconn, $query, array($license_key));
+    $stmt = $pdo->prepare("SELECT ac.*, p.duration_days, p.name AS package_name 
+                           FROM activation_codes ac 
+                           JOIN packages p ON ac.package_id = p.id 
+                           WHERE ac.code = :code LIMIT 1");
+    $stmt->execute(['code' => $license_key]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($result && pg_num_rows($result) > 0) {
-        $row = pg_fetch_assoc($result);
-        $is_used = ($row['used'] === 't' || $row['used'] == 1);
-
+    if ($row) {
+        $is_used = ($row['used'] === 't' || $row['used'] == 1 || $row['used'] === true);
+        
         if ($is_used) {
             if (!empty($device_id) && trim($row['device_id']) !== $device_id) {
-                echo json_encode(["success" => false, "message" => "Ky kod është aktiv në një pajisje tjetër."]);
+                echo json_encode(["success" => false, "message" => "Ky kod eshte ne nje pajisje tjeter."]);
             } else {
-                if (time() > strtotime($row['expires_at'])) {
-                    echo json_encode(["success" => false, "message" => "Licenca ka skaduar më " . $row['expires_at']]);
-                } else {
-                    echo json_encode([
-                        "success" => true,
-                        "message" => "Licenca është aktive.",
-                        "expires_at" => $row['expires_at'],
-                        "package_name" => $row['package_name']
-                    ]);
-                }
+                echo json_encode([
+                    "success" => true,
+                    "expires_at" => $row['expires_at'],
+                    "package_name" => $row['package_name']
+                ]);
             }
         } else {
-            if (empty($device_id)) {
-                echo json_encode(["success" => false, "message" => "Kodi është i vlefshëm, por duhet device_id për aktivizim."]);
-                exit;
-            }
-
             $expiry_date = date('Y-m-d H:i:s', strtotime("+" . $row['duration_days'] . " days"));
-            $update = pg_query_params($dbconn, 
-                "UPDATE activation_codes SET used = true, device_id = $1, expires_at = $2 WHERE code = $3",
-                array($device_id, $expiry_date, $license_key)
-            );
+            $update = $pdo->prepare("UPDATE activation_codes SET used = true, device_id = :dev, expires_at = :exp WHERE code = :code");
+            $update->execute(['dev' => $device_id, 'exp' => $expiry_date, 'code' => $license_key]);
 
             echo json_encode([
                 "success" => true,
-                "message" => "Aktivizimi u krye me sukses!",
+                "message" => "U aktivizua!",
                 "expires_at" => $expiry_date,
                 "package_name" => $row['package_name']
             ]);
         }
     } else {
-        echo json_encode(["success" => false, "message" => "Kodi nuk ekziston."]);
+        echo json_encode(["success" => false, "message" => "Kodi nuk u gjet."]);
     }
-} catch (Exception $e) {
-    echo json_encode(["success" => false, "message" => "Error: " . $e->getMessage()]);
+} catch (PDOException $e) {
+    echo json_encode(["success" => false, "message" => "Gabim DB: " . $e->getMessage()]);
 }
-
-pg_close($dbconn);
 ?>
