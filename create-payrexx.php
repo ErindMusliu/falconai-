@@ -13,7 +13,7 @@ $price = floatval($input['price'] ?? 0);
 $plan  = $input['plan'] ?? 'Basic';
 
 $instanceName = 'erind'; 
-$apiKey = '7M5ec8CPQ35ittnGTp4gaH7x0dwtoF';
+$apiKey = 'aKigUR6gt5cLiLlfZsEFpdsYpv2rLJ';
 
 $data = [
     'amount'             => intval($price * 100),
