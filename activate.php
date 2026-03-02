@@ -7,92 +7,114 @@ header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type");
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit;
+}
+
+require_once 'db.php';
 
 $input = file_get_contents("php://input");
 $data = json_decode($input, true);
 
 $license_key = trim($data["activation_code"] ?? "");
-$device_id = trim($data["device_id"] ?? "");
+$device_uid = trim($data["device_id"] ?? "");
 
-if (empty($license_key) || empty($device_id)) {
-    echo json_encode(["success" => false, "message" => "Kodi ose ID e pajisjes mungon."]);
-    exit;
-}
-
-$host     = getenv('DB_HOST') ?: "trolley.proxy.rlwy.net"; 
-$port     = getenv('DB_PORT') ?: "22626";
-$dbname   = getenv('DB_NAME') ?: "railway"; 
-$user     = getenv('DB_USER') ?: "postgres";
-$password = getenv('DB_PASS') ?: "EKfRjcFXFPXNADxvjfuNQdkcZZxlGhEy"; 
-
-if (!function_exists('pg_connect')) {
-    echo json_encode(["success" => false, "message" => "Serveri PHP nuk ka të aktivizuar 'pg_connect'. Shto composer.json me ext-pgsql."]);
-    exit;
-}
-
-$connection_string = "host=$host port=$port dbname=$dbname user=$user password=$password sslmode=require";
-$dbconn = @pg_connect($connection_string);
-
-if (!$dbconn) {
-    echo json_encode(["success" => false, "message" => "Lidhja me DB dështoi: " . pg_last_error()]);
+if (empty($license_key) || empty($device_uid)) {
+    echo json_encode([
+        "success" => false, 
+        "message" => "Ju lutem jepni kodin e aktivizimit dhe ID-në e pajisjes."
+    ]);
     exit;
 }
 
 try {
-    $query = "SELECT ac.*, p.duration_days, p.name AS package_name 
-              FROM activation_codes ac 
-              JOIN packages p ON ac.package_id = p.id 
-              WHERE ac.code = $1 LIMIT 1";
+    $stmt = $pdo->prepare("
+        SELECT ac.*, p.duration_days, p.name AS package_name 
+        FROM activation_codes ac 
+        JOIN packages p ON ac.package_id = p.id 
+        WHERE ac.code = :code 
+        LIMIT 1
+    ");
+    $stmt->execute(['code' => $license_key]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    $result = pg_query_params($dbconn, $query, array($license_key));
+    if (!$row) {
+        echo json_encode(["success" => false, "message" => "Ky kod nuk ekziston në sistemin tonë."]);
+        exit;
+    }
 
-    if ($result && pg_num_rows($result) > 0) {
-        $row = pg_fetch_assoc($result);
-        
-        $is_used = ($row['used'] === 't' || $row['used'] == 1 || $row['used'] === true);
+    $is_used = (bool)$row['used'];
+    $current_time = time();
 
-        if ($is_used) {
-            if (trim($row['device_id']) !== $device_id) {
-                echo json_encode(["success" => false, "message" => "Ky kod është i lidhur me një pajisje tjetër!"]);
-            } else {
-                $expiry_timestamp = strtotime($row['expires_at']);
-                if (time() > $expiry_timestamp) {
-                    echo json_encode(["success" => false, "message" => "Licenca juaj ka skaduar."]);
-                } else {
-                    echo json_encode([
-                        "success" => true,
-                        "message" => "Mirëseerdhët përsëri!",
-                        "expires_at" => $row['expires_at'],
-                        "package_name" => $row['package_name']
-                    ]);
-                }
-            }
-        } else {
-            $duration = (int)$row['duration_days'];
-            $expiry_date = date('Y-m-d H:i:s', strtotime("+$duration days"));
-
-            $update_query = "UPDATE activation_codes SET used = true, device_id = $1, expires_at = $2 WHERE code = $3";
-            $update_result = pg_query_params($dbconn, $update_query, array($device_id, $expiry_date, $license_key));
-
-            if ($update_result) {
-                echo json_encode([
-                    "success" => true,
-                    "message" => "Aktivizimi u krye me sukses!",
-                    "expires_at" => $expiry_date,
-                    "package_name" => $row['package_name']
-                ]);
-            } else {
-                echo json_encode(["success" => false, "message" => "Gabim gjatë aktivizimit në DB."]);
-            }
+    if ($is_used) {
+        if (trim($row['device_id']) !== $device_uid) {
+            echo json_encode([
+                "success" => false, 
+                "message" => "Ky kod është i lidhur me një pajisje tjetër. Kontaktoni mbështetjen."
+            ]);
+            exit;
         }
+
+        $expiry_timestamp = strtotime($row['expires_at']);
+        if ($current_time > $expiry_timestamp) {
+            echo json_encode([
+                "success" => false, 
+                "message" => "Licenca juaj ka skaduar më " . date('d/m/Y', $expiry_timestamp)
+            ]);
+            exit;
+        }
+
+        echo json_encode([
+            "success" => true,
+            "message" => "Mirëseerdhët përsëri në FalconAI!",
+            "expires_at" => $row['expires_at'],
+            "package_name" => $row['package_name']
+        ]);
+
     } else {
-        echo json_encode(["success" => false, "message" => "Kodi i aktivizimit nuk u gjet."]);
+        $duration = (int)$row['duration_days'];
+        $expiry_date = date('Y-m-d H:i:s', strtotime("+$duration days"));
+
+        $pdo->beginTransaction();
+
+        $update = $pdo->prepare("
+            UPDATE activation_codes 
+            SET used = true, 
+                device_id = :dev, 
+                expires_at = :exp 
+            WHERE code = :code
+        ");
+        $update->execute([
+            'dev' => $device_uid,
+            'exp' => $expiry_date,
+            'code' => $license_key
+        ]);
+        
+        $stmtDev = $pdo->prepare("
+            INSERT INTO devices (device_uid, activated_at) 
+            VALUES (:dev, NOW()) 
+            ON CONFLICT (device_uid) DO NOTHING
+        ");
+        $stmtDev->execute(['dev' => $device_uid]);
+
+        $pdo->commit();
+
+        echo json_encode([
+            "success" => true,
+            "message" => "Aktivizimi u krye me sukses! Shijoni FalconAI.",
+            "expires_at" => $expiry_date,
+            "package_name" => $row['package_name']
+        ]);
     }
 
 } catch (Exception $e) {
-    echo json_encode(["success" => false, "message" => "Gabim i serverit: " . $e->getMessage()]);
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+    error_log("Activation Error: " . $e->getMessage());
+    echo json_encode([
+        "success" => false, 
+        "message" => "Ndodhi një gabim teknik gjatë procesimit."
+    ]);
 }
-
-pg_close($dbconn);
 ?>
