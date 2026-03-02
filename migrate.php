@@ -3,9 +3,9 @@ header('Content-Type: text/plain');
 
 $host     = "dpg-xxxx-a.frankfurt-postgres.render.com"; 
 $port     = "5432";
-$dbname   = "falconai_db";
-$user     = "postgres";
-$password = "PASSWORD_YT_KETU";
+$dbname   = "falconai_db_xeru";
+$user     = "falconai_db_xeru_user";
+$password = "P3Ld2ygWMWaVyDiVVTRwMxqPSS0cCfaT";
 
 try {
     $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
