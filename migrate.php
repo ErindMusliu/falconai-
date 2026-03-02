@@ -1,21 +1,19 @@
 <?php
 header('Content-Type: text/plain');
 
-$host     = "dpg-xxxx-a.oregon-postgres.render.com"; 
-$port     = "5432";
-$dbname   = "falconai_db_xeru";
-$user     = "falconai_db_xeru_user";
-$password = "P3Ld2ygWMWaVyDiVVTRwMxqPSS0cCfaT";
+$url = "postgresql://falconai_db_xeru_user:P3Ld2ygWMWaVyDiVVTRwMxqPSS0cCfaT@dpg-d6i9utcr85hc739v3ss0-a.oregon-postgres.render.com/falconai_db_xeru";
 
 try {
-    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname;sslmode=require";
-    
-    $options = [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_TIMEOUT => 60, 
-    ];
+    $dbopts = parse_url($url);
+    $host = $dbopts["host"];
+    $port = $dbopts["port"];
+    $user = $dbopts["user"];
+    $pass = $dbopts["pass"];
+    $dbname = ltrim($dbopts["path"], '/');
 
-    $pdo = new PDO($dsn, $user, $password, $options);
+    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname;sslmode=require";
+    $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+
     echo "✅ Lidhja me sukses!\n\n";
 
     $sql = "
@@ -55,7 +53,6 @@ try {
         code VARCHAR(30) UNIQUE NOT NULL,
         package_id INTEGER NOT NULL REFERENCES packages(id),
         customer_id INTEGER REFERENCES customers(id),
-        device_id VARCHAR(50),
         used BOOLEAN DEFAULT FALSE,
         expires_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -81,8 +78,8 @@ try {
     ";
 
     $pdo->exec($sql);
-    echo "✅ Tabelat u krijuan!\n";
-    echo "✅ Paketat u insertuan!\n";
+    echo "✅ Tabelat u krijuan me sukses!\n";
+    echo "✅ Paketat u insertuan!";
 
 } catch (PDOException $e) {
     die("❌ Gabim: " . $e->getMessage());
