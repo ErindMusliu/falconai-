@@ -1,74 +1,58 @@
 <?php
 header("Access-Control-Allow-Origin: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization");
+header("Access-Control-Allow-Methods: POST, OPTIONS");
+header("Access-Control-Allow-Headers: Content-Type");
 
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    http_response_code(200);
-    exit;
-}
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') exit;
 
 header('Content-Type: application/json');
 
 $input = json_decode(file_get_contents('php://input'), true);
-
-$email = filter_var($input['email'] ?? '', FILTER_VALIDATE_EMAIL);
-$plan  = htmlspecialchars($input['plan'] ?? 'Basic');
+$email = $input['email'] ?? '';
 $price = floatval($input['price'] ?? 0);
-
-if (!$email || $price <= 0) {
-    echo json_encode([
-        'success' => false, 
-        'message' => 'Te dhena te pavlefshme (Email ose Cmimi).'
-    ]);
-    exit;
-}
+$plan  = $input['plan'] ?? 'Basic';
 
 $instanceName = 'erind'; 
 $apiKey = '7M5ec8CPQ35ittnGTp4gaH7x0dwtoF';
-$url = "https://api.payrexx.com/v1/Gateway/";
 
 $data = [
     'amount'             => intval($price * 100),
     'currency'           => 'EUR',
-    'vatRate'            => 0,
-    'title'              => "FalconAI - $plan Plan",
-    'description'        => "Abonim mujor per sherbimin FalconAI",
+    'description'        => "FalconAI - $plan Plan",
     'prefilledPayerData' => ['email' => $email],
-    'psp'                => [],
-    'successRedirectUrl' => "https://yourdomain.com/index.html?status=success",
-    'failedRedirectUrl'  => "https://yourdomain.com/index.html?status=failed",
+    'successRedirectUrl' => "https://google.com",
+    'title'              => "FalconAI Subscription",
 ];
 
 $queryString = http_build_query($data);
 $signature = hash_hmac('sha256', $queryString, $apiKey);
 $data['ApiSignature'] = $signature;
 
-$ch = curl_init($url . "?instance=" . $instanceName);
+$url = "https://api.payrexx.com/v1/Gateway/?instance=" . $instanceName;
+
+$ch = curl_init($url);
 curl_setopt($ch, CURLOPT_POST, 1);
 curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$error    = curl_error($ch);
 curl_close($ch);
 
 $result = json_decode($response, true);
 
-if ($httpCode === 200 && isset($result['status']) && $result['status'] === 'success') {
+if ($httpCode === 200 && isset($result['data'][0]['link'])) {
     echo json_encode([
-        'success'      => true,
-        'checkout_url' => $result['data'][0]['link'],
+        'success'      => true, 
+        'checkout_url' => $result['data'][0]['link'], 
         'transaction_id' => $result['data'][0]['id']
     ]);
 } else {
     echo json_encode([
-        'success' => false,
-        'message' => 'Gabim gjate krijimit te pageses.',
-        'error_detail' => $result['message'] ?? 'API Error',
-        'curl_error' => $error
+        'success' => false, 
+        'message' => 'Payrexx Error: ' . ($result['message'] ?? 'Unknown Error'),
+        'debug_info' => $result
     ]);
 }
 ?>
