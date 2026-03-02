@@ -1,9 +1,12 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: POST, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type");
+header("Access-Control-Allow-Headers: Content-Type, Authorization");
 
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') exit;
+if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
 
 header('Content-Type: application/json');
 
@@ -12,29 +15,33 @@ $email = $input['email'] ?? '';
 $price = floatval($input['price'] ?? 0);
 $plan  = $input['plan'] ?? 'Basic';
 
+if (!$email || $price <= 0) {
+    echo json_encode(['success' => false, 'message' => 'Te dhena te gabuara.']);
+    exit;
+}
+
 $instanceName = 'erind'; 
 $apiKey = 'aKigUR6gt5cLiLlfZsEFpdsYpv2rLJ';
 
+$url = "https://api.payrexx.com/v1/Gateway/";
+
 $data = [
-    'amount'             => intval($price * 100),
-    'currency'           => 'EUR',
-    'description'        => "FalconAI - $plan Plan",
+    'amount' => intval($price * 100),
+    'currency' => 'EUR',
+    'vatRate' => 0,
+    'title' => "FalconAI - $plan Plan",
+    'description' => "Abonim per sherbimin FalconAI",
     'prefilledPayerData' => ['email' => $email],
-    'successRedirectUrl' => "https://google.com",
-    'title'              => "FalconAI Subscription",
+    'successRedirectUrl' => "https://falconai-ubo3.onrender.com/success.html",
+    'failedRedirectUrl'  => "https://falconai-ubo3.onrender.com/failed.html",
 ];
 
-$queryString = http_build_query($data);
-$signature = hash_hmac('sha256', $queryString, $apiKey);
-$data['ApiSignature'] = $signature;
-
-$url = "https://api.payrexx.com/v1/Gateway/?instance=" . $instanceName;
-
-$ch = curl_init($url);
+$ch = curl_init($url . "?instance=" . $instanceName);
 curl_setopt($ch, CURLOPT_POST, 1);
 curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+curl_setopt($ch, CURLOPT_USERPWD, $apiKey . ":"); 
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -49,10 +56,11 @@ if ($httpCode === 200 && isset($result['data'][0]['link'])) {
         'transaction_id' => $result['data'][0]['id']
     ]);
 } else {
+    $errorMessage = $result['message'] ?? 'API Key mismatch or permissions issue';
     echo json_encode([
         'success' => false, 
-        'message' => 'Payrexx Error: ' . ($result['message'] ?? 'Unknown Error'),
-        'debug_info' => $result
+        'message' => 'Payrexx Error: ' . $errorMessage,
+        'debug' => $result
     ]);
 }
 ?>
