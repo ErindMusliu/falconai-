@@ -1,94 +1,50 @@
 <?php
-header('Content-Type: text/plain');
+require_once 'db.php';
 
-$url = "postgresql://falconai_db_xeru_user:P3Ld2ygWMWaVyDiVVTRwMxqPSS0cCfaT@dpg-d6i9utcr85hc739v3ss0-a.oregon-postgres.render.com/falconai_db_xeru";
+$tables = ['packages', 'customers', 'payments', 'activation_codes', 'devices', 'subscriptions'];
 
-try {
-    $dbopts = parse_url($url);
-    
-    // Marrim te dhenat direkt dhe vendosim 5432 nese porta mungon
-    $host = $dbopts["host"];
-    $port = isset($dbopts["port"]) ? $dbopts["port"] : "5432";
-    $user = $dbopts["user"];
-    $pass = $dbopts["pass"];
-    $dbname = ltrim($dbopts["path"], '/');
+echo "<html><head><title>FalconAI Admin</title>";
+echo "<style>
+    body { font-family: sans-serif; background: #f4f4f4; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; background: white; margin-bottom: 30px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+    th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+    th { background-color: #007bff; color: white; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+    h2 { color: #333; border-left: 5px solid #007bff; padding-left: 10px; }
+    .badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; background: #e0e0e0; }
+</style></head><body>";
 
-    // DSN String i saktë
-    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname;sslmode=require";
-    
-    $pdo = new PDO($dsn, $user, $pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-        PDO::ATTR_TIMEOUT => 30
-    ]);
+echo "<h1>🚀 FalconAI Database Explorer</h1>";
 
-    echo "✅ Lidhja me sukses në Oregon!\n\n";
+foreach ($tables as $table) {
+    try {
+        $stmt = $pdo->query("SELECT * FROM $table");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $sql = "
-    CREATE TABLE IF NOT EXISTS packages (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) UNIQUE NOT NULL,
-        price NUMERIC(6,2) NOT NULL,
-        duration_days INTEGER NOT NULL,
-        max_devices INTEGER DEFAULT 2
-    );
+        echo "<h2>Tabela: " . ucfirst($table) . " <small>(" . count($rows) . " rreshta)</small></h2>";
 
-    CREATE TABLE IF NOT EXISTS customers (
-        id SERIAL PRIMARY KEY,
-        full_name VARCHAR(100) NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+        if (count($rows) > 0) {
+            echo "<table><thead><tr>";
+            
+            foreach (array_keys($rows[0]) as $columnName) {
+                echo "<th>" . htmlspecialchars($columnName) . "</th>";
+            }
+            echo "</tr></thead><tbody>";
 
-    CREATE TABLE IF NOT EXISTS devices (
-        id SERIAL PRIMARY KEY,
-        device_uid VARCHAR(50) UNIQUE NOT NULL,
-        activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS payments (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) NOT NULL,
-        plan VARCHAR(255) NOT NULL,
-        order_id VARCHAR(255) UNIQUE NOT NULL,
-        status VARCHAR(20) DEFAULT 'paid',
-        license_key VARCHAR(255) UNIQUE NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS activation_codes (
-        id SERIAL PRIMARY KEY,
-        code VARCHAR(30) UNIQUE NOT NULL,
-        package_id INTEGER NOT NULL REFERENCES packages(id),
-        customer_id INTEGER REFERENCES customers(id),
-        used BOOLEAN DEFAULT FALSE,
-        expires_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS subscriptions (
-        id SERIAL PRIMARY KEY,
-        device_id INTEGER NOT NULL REFERENCES devices(id),
-        package_id INTEGER NOT NULL REFERENCES packages(id),
-        customer_id INTEGER REFERENCES customers(id),
-        starts_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        expires_at TIMESTAMP NOT NULL,
-        active BOOLEAN DEFAULT TRUE
-    );
-
-    INSERT INTO packages (name, price, duration_days, max_devices)
-    VALUES 
-        ('Basic', 4.99, 30, 2),
-        ('Standard', 7.99, 30, 2),
-        ('Pro', 9.99, 30, 2),
-        ('Premium', 14.99, 30, 2)
-    ON CONFLICT (name) DO NOTHING;
-    ";
-
-    $pdo->exec($sql);
-    echo "✅ Tabelat u krijuan me sukses!\n";
-    echo "✅ Paketat u insertuan!";
-
-} catch (PDOException $e) {
-    die("❌ Gabim: " . $e->getMessage());
+            foreach ($rows as $row) {
+                echo "<tr>";
+                foreach ($row as $value) {
+                    echo "<td>" . ($value === null ? "<i>null</i>" : htmlspecialchars($value)) . "</td>";
+                }
+                echo "</tr>";
+            }
+            echo "</tbody></table>";
+        } else {
+            echo "<p style='color: #888;'>Kjo tabelë është boshe momentalisht.</p><hr>";
+        }
+    } catch (PDOException $e) {
+        echo "<p style='color: red;'>Gabim me tabelën $table: " . $e->getMessage() . "</p>";
+    }
 }
+echo "</body></html>";
 ?>
