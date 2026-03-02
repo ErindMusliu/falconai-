@@ -5,16 +5,23 @@ $url = "postgresql://falconai_db_xeru_user:P3Ld2ygWMWaVyDiVVTRwMxqPSS0cCfaT@dpg-
 
 try {
     $dbopts = parse_url($url);
+    
+    // Marrim te dhenat direkt dhe vendosim 5432 nese porta mungon
     $host = $dbopts["host"];
-    $port = $dbopts["port"];
+    $port = isset($dbopts["port"]) ? $dbopts["port"] : "5432";
     $user = $dbopts["user"];
     $pass = $dbopts["pass"];
     $dbname = ltrim($dbopts["path"], '/');
 
+    // DSN String i saktë
     $dsn = "pgsql:host=$host;port=$port;dbname=$dbname;sslmode=require";
-    $pdo = new PDO($dsn, $user, $pass, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    
+    $pdo = new PDO($dsn, $user, $pass, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_TIMEOUT => 30
+    ]);
 
-    echo "✅ Lidhja me sukses!\n\n";
+    echo "✅ Lidhja me sukses në Oregon!\n\n";
 
     $sql = "
     CREATE TABLE IF NOT EXISTS packages (
