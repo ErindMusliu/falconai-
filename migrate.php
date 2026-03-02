@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: text/plain');
 
-$host     = "dpg-xxxx-a.frankfurt-postgres.render.com"; 
+$host     = "dpg-xxxx-a.oregon-postgres.render.com"; 
 $port     = "5432";
 $dbname   = "falconai_db_xeru";
 $user     = "falconai_db_xeru_user";
