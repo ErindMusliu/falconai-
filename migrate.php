@@ -8,12 +8,17 @@ $user     = "falconai_db_xeru_user";
 $password = "P3Ld2ygWMWaVyDiVVTRwMxqPSS0cCfaT";
 
 try {
-    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname";
-    $pdo = new PDO($dsn, $user, $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
-    echo "✅ Lidhja me sukses!\n";
+    $dsn = "pgsql:host=$host;port=$port;dbname=$dbname;sslmode=require";
+    
+    $options = [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_TIMEOUT => 60, 
+    ];
+
+    $pdo = new PDO($dsn, $user, $password, $options);
+    echo "✅ Lidhja me sukses!\n\n";
 
     $sql = "
-    -- 1. Tabela e Paketave
     CREATE TABLE IF NOT EXISTS packages (
         id SERIAL PRIMARY KEY,
         name VARCHAR(100) UNIQUE NOT NULL,
@@ -22,7 +27,6 @@ try {
         max_devices INTEGER DEFAULT 2
     );
 
-    -- 2. Tabela e Klienteve
     CREATE TABLE IF NOT EXISTS customers (
         id SERIAL PRIMARY KEY,
         full_name VARCHAR(100) NOT NULL,
@@ -30,14 +34,12 @@ try {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- 3. Tabela e Pajisjeve (Devices)
     CREATE TABLE IF NOT EXISTS devices (
         id SERIAL PRIMARY KEY,
         device_uid VARCHAR(50) UNIQUE NOT NULL,
         activated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- 4. Tabela e Pagesave (Payments)
     CREATE TABLE IF NOT EXISTS payments (
         id SERIAL PRIMARY KEY,
         email VARCHAR(255) NOT NULL,
@@ -48,7 +50,6 @@ try {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- 5. Tabela e Kodeve te Aktivizimit (Activation Codes)
     CREATE TABLE IF NOT EXISTS activation_codes (
         id SERIAL PRIMARY KEY,
         code VARCHAR(30) UNIQUE NOT NULL,
@@ -60,7 +61,6 @@ try {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- 6. Tabela e Abonimeve (Subscriptions)
     CREATE TABLE IF NOT EXISTS subscriptions (
         id SERIAL PRIMARY KEY,
         device_id INTEGER NOT NULL REFERENCES devices(id),
@@ -71,7 +71,6 @@ try {
         active BOOLEAN DEFAULT TRUE
     );
 
-    -- 7. Popullimi i paketave nese jane boshe
     INSERT INTO packages (name, price, duration_days, max_devices)
     VALUES 
         ('Basic', 4.99, 30, 2),
@@ -82,9 +81,10 @@ try {
     ";
 
     $pdo->exec($sql);
-    echo "✅ Te gjitha tabelat u krijuan me sukses!\n";
-    echo "✅ Paketat u insertuan (Basic, Standard, Pro, Premium).\n";
+    echo "✅ Tabelat u krijuan!\n";
+    echo "✅ Paketat u insertuan!\n";
 
 } catch (PDOException $e) {
     die("❌ Gabim: " . $e->getMessage());
 }
+?>
