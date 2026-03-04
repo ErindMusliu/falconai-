@@ -8,7 +8,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     exit;
 }
 
-$api_key = "VENDOS_API_KEY_TEND_KETU"; 
+$api_key = "BW8XYBY-36JM48Y-PNBEVP7-HFNDB4H"; 
 
 $inputData = file_get_contents("php://input");
 $input = json_decode($inputData, true);
