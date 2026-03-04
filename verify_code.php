@@ -7,13 +7,11 @@ header("Access-Control-Allow-Headers: Content-Type");
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
-include 'db.php';
+require_once 'db.php';
 
-$input = file_get_contents("php://input");
-$data = json_decode($input, true);
-
-$license_key = trim($data["activation_code"] ?? $_GET['code'] ?? "");
-$device_id_str = trim($data["device_id"] ?? $_GET['device'] ?? "");
+$input = json_decode(file_get_contents("php://input"), true);
+$license_key = trim($input["activation_code"] ?? $_GET['code'] ?? "");
+$device_uid = trim($input["device_id"] ?? $_GET['device'] ?? "");
 
 if (empty($license_key)) {
     echo json_encode(["success" => false, "message" => "Mungon kodi i aktivizimit."]);
@@ -31,26 +29,40 @@ try {
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$row) {
-        echo json_encode(["success" => false, "message" => "Kodi nuk u gjet."]);
+        echo json_encode(["success" => false, "message" => "Kodi nuk u gjet në sistemin tonë."]);
         exit;
     }
 
     $is_used = ($row['used'] === 't' || $row['used'] == 1 || $row['used'] === true);
 
     if ($is_used) {
-        if (!empty($device_id_str) && trim($row['device_id']) !== $device_id_str) {
-            echo json_encode(["success" => false, "message" => "Ky kod është aktiv në një pajisje tjetër."]);
-        } else {
+        if (!empty($device_uid) && trim($row['device_id']) !== $device_uid) {
             echo json_encode([
-                "success" => true, 
-                "message" => "Mirëseerdhët!", 
-                "expires_at" => $row['expires_at'], 
-                "package_name" => $row['package_name']
+                "success" => false, 
+                "message" => "Ky kod është aktiv në një pajisje tjetër. Kontaktoni mbështetjen."
             ]);
+            exit;
         }
-    } else {
-        if (empty($device_id_str)) {
-            echo json_encode(["success" => false, "message" => "ID e pajisjes kërkohet."]);
+
+        if (time() > strtotime($row['expires_at'])) {
+            echo json_encode([
+                "success" => false, 
+                "message" => "Licenca juaj ka skaduar më " . date('d/m/Y', strtotime($row['expires_at']))
+            ]);
+            exit;
+        }
+
+        echo json_encode([
+            "success" => true,
+            "message" => "Mirëseerdhët përsëri në FalconAI!",
+            "expires_at" => $row['expires_at'],
+            "package_name" => $row['package_name']
+        ]);
+
+    } 
+    else {
+        if (empty($device_uid)) {
+            echo json_encode(["success" => false, "message" => "ID e pajisjes kërkohet për aktivizim."]);
             exit;
         }
 
@@ -59,35 +71,50 @@ try {
 
         try {
             $pdo->beginTransaction();
-
             $update = $pdo->prepare("UPDATE activation_codes SET used = true, device_id = :dev, expires_at = :exp WHERE code = :code");
-            $update->execute(['dev' => $device_id_str, 'exp' => $expiry_date, 'code' => $license_key]);
+            $update->execute(['dev' => $device_uid, 'exp' => $expiry_date, 'code' => $license_key]);
 
-            $devSql = "INSERT INTO devices (device_id, device_uid, last_login) 
-                       VALUES (:dev, :dev, NOW()) 
-                       ON CONFLICT (device_id) DO UPDATE SET last_login = NOW() 
+            $devSql = "INSERT INTO devices (device_uid, activated_at) 
+                       VALUES (:dev, NOW()) 
+                       ON CONFLICT (device_uid) DO NOTHING 
                        RETURNING id";
             $stmtDev = $pdo->prepare($devSql);
-            $stmtDev->execute(['dev' => $device_id_str]);
-            $device_numeric_id = $stmtDev->fetchColumn();
+            $stmtDev->execute(['dev' => $device_uid]);
+            $device_id_numeric = $stmtDev->fetchColumn();
 
-            $subSql = "INSERT INTO subscriptions (customer_id, package_id, device_id, start_date, expires_at, status) 
-                       VALUES (:cust, :pkg, :dev_id, NOW(), :exp, 'active')";
+            if (!$device_id_numeric) {
+                $getDev = $pdo->prepare("SELECT id FROM devices WHERE device_uid = ?");
+                $getDev->execute([$device_uid]);
+                $device_id_numeric = $getDev->fetchColumn();
+            }
+
+            $subSql = "INSERT INTO subscriptions (device_id, package_id, customer_id, starts_at, expires_at, active) 
+                       VALUES (:dev_id, :pkg, :cust, NOW(), :exp, TRUE)";
             $pdo->prepare($subSql)->execute([
-                'cust'   => $row['customer_id'],
+                'dev_id' => $device_id_numeric,
                 'pkg'    => $row['package_id'],
-                'dev_id' => $device_numeric_id,
+                'cust'   => $row['customer_id'],
                 'exp'    => $expiry_date
             ]);
 
             $pdo->commit();
-            echo json_encode(["success" => true, "message" => "Aktivizimi u krye me sukses!", "expires_at" => $expiry_date]);
+
+            echo json_encode([
+                "success" => true,
+                "message" => "Aktivizimi u krye me sukses! Shijoni FalconAI.",
+                "expires_at" => $expiry_date,
+                "package_name" => $row['package_name']
+            ]);
 
         } catch (Exception $e) {
             if ($pdo->inTransaction()) { $pdo->rollBack(); }
-            echo json_encode(["success" => false, "message" => "Gabim procesimi: " . $e->getMessage()]);
+            error_log("Activation Error: " . $e->getMessage());
+            echo json_encode(["success" => false, "message" => "Gabim gjatë procesimit teknik."]);
         }
     }
+
 } catch (PDOException $e) {
-    echo json_encode(["success" => false, "message" => "Gabim DB: " . $e->getMessage()]);
+    error_log("DB Error: " . $e->getMessage());
+    echo json_encode(["success" => false, "message" => "Gabim në lidhjen me databazën."]);
 }
+?>
