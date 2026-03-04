@@ -4,26 +4,31 @@ header("Access-Control-Allow-Methods: POST, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, x-api-key");
 header("Content-Type: application/json");
 
-if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    exit;
+}
 
-$input = json_decode(file_get_contents("php://input"), true);
+$api_key = "VENDOS_API_KEY_TEND_KETU"; 
 
-$api_key = "BW8XYBY-36JM48Y-PNBEVP7-HFNDB4H"; 
+$inputData = file_get_contents("php://input");
+$input = json_decode($inputData, true);
 
-if (!$input) {
-    echo json_encode(["success" => false, "message" => "Nuk u mern dot te dhenat nga front-end."]);
+if (!$input || empty($input['price'])) {
+    echo json_encode([
+        "success" => false, 
+        "message" => "Të dhënat e kërkesës mungojnë (Price/Plan)."
+    ]);
     exit;
 }
 
 $data = [
-    "price_amount" => (float)$input['price'],
-    "price_currency" => "eur",
-    "pay_currency" => null,
-    "ipn_callback_url" => "https://falconai-ubo3.onrender.com/billgang-webhook.php",
-    "order_id" => "FALCON-" . time(),
-    "order_description" => "FalconAI Plan: " . $input['plan'],
-    "success_url" => "https://falconai-ubo3.onrender.com/success.php",
-    "cancel_url" => "https://falconai-ubo3.onrender.com/index.html"
+    "price_amount"      => (float)$input['price'],
+    "price_currency"    => "eur",
+    "ipn_callback_url"  => "https://falconai-ubo3.onrender.com/billgang-webhook.php",
+    "order_id"          => "FAI-" . time() . "-" . rand(100, 999),
+    "order_description" => "FalconAI Subscription: " . ($input['plan'] ?? 'Premium'),
+    "success_url"       => "https://falconai-ubo3.onrender.com/success.php",
+    "cancel_url"        => "https://falconai-ubo3.onrender.com/index.html"
 ];
 
 $ch = curl_init("https://api.nowpayments.io/v1/invoice");
@@ -37,19 +42,30 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, [
 
 $response = curl_exec($ch);
 $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-$err = curl_error($ch);
+$curl_error = curl_error($ch);
 curl_close($ch);
+
+if ($curl_error) {
+    echo json_encode([
+        "success" => false, 
+        "message" => "CURL Error: " . $curl_error
+    ]);
+    exit;
+}
 
 $resData = json_decode($response, true);
 
 if ($status == 200 || $status == 201) {
-    echo json_encode(["success" => true, "invoice_url" => $resData['invoice_url']]);
+    echo json_encode([
+        "success" => true, 
+        "invoice_url" => $resData['invoice_url']
+    ]);
 } else {
-    $error_msg = isset($resData['message']) ? $resData['message'] : "Unknown API Error";
+    $errorMessage = isset($resData['message']) ? $resData['message'] : "Unknown API Error";
     echo json_encode([
         "success" => false, 
-        "message" => "NOWPayments Error: " . $error_msg,
-        "code" => $status
+        "message" => "NOWPayments Error: " . $errorMessage,
+        "debug_status" => $status
     ]);
 }
 ?>
