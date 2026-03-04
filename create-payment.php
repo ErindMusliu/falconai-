@@ -15,7 +15,7 @@ if (!$input || empty($input['email'])) {
     exit;
 }
 
-$api_key = "VENDOS_API_KEY_I_NOWPAYMENTS_KETU"; 
+$api_key = "3+evl99TdoXWlkGb9fhE3oETElI3QPHQ"; 
 
 $data = [
     "price_amount" => (float)$input['price'],
