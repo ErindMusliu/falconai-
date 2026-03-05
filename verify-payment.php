@@ -8,8 +8,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
 include 'db.php';
 
-$clientId = "AR2C2yrKcxbHCN1QZAAheawDRTh9m661qV754gPvvKwhupeEdsyeKTi4Mt-70J7Kuq4zVEYKZK-6KUIF";
-$secret = "ENz2vAgGK0K5yWwGC2FkRxTdD6NZa29xMoU5wjcAup5qhIKBBIYsomurTEaW3191wx2RWW1Zh3ZYtRm";
+$clientId = "ASBtx4CktocecM6Hh_fRek_vEe7M-bLGG9ZbVyAm-lkMZAmj4Ynb2nbSqxW6oP27n9xW7LiqbMFz_Gu5";
+$secret = "EOqyMVXuo9MumwrEPFHHAJNdhgFwwelfIogSbQms4YprjkMl_jr7AHd4K52Q4fHaTuDJnOOJChyXsalM";
 
 $input = file_get_contents("php://input");
 $data = json_decode($input, true);
