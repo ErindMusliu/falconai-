@@ -8,15 +8,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { exit; }
 
 include 'db.php';
 
+$clientId = "ASBtx4CktocecM6Hh_fRek_vEe7M-bLGG9ZbVyAm-lkMZAmj4Ynb2nbSqxW6oP27n9xW7LiqbMFz_Gu5";
+$secret = "EOqyMVXuo9MumwrEPFHHAJNdhgFwwelfIogSbQms4YprjkMl_jr7AHd4K52Q4fHaTuDJnOOJChyXsalM";
+
 $input = file_get_contents("php://input");
 $data = json_decode($input, true);
 
 $orderID = $data['orderID'] ?? '';
-$email   = $data['email'] ?? '';
-$plan    = $data['plan'] ?? 'Basic';
+$email = $data['email'] ?? '';
+$plan = $data['plan'] ?? 'Basic';
 
 if (empty($orderID) || empty($email)) {
     echo json_encode(["success" => false, "message" => "Te dhenat mungojne"]);
+    exit;
+}
+
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, "https://api-m.paypal.com/v1/oauth2/token");
+curl_setopt($ch, CURLOPT_HEADER, false);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_USERPWD, $clientId . ":" . $secret);
+curl_setopt($ch, CURLOPT_POSTFIELDS, "grant_type=client_credentials");
+$result = curl_exec($ch);
+$tokenData = json_decode($result);
+$accessToken = $tokenData->access_token;
+
+curl_setopt($ch, CURLOPT_URL, "https://api-m.paypal.com/v2/checkout/orders/" . $orderID);
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json", "Authorization: Bearer " . $accessToken]);
+curl_setopt($ch, CURLOPT_POSTFIELDS, null);
+$orderStatusResponse = curl_exec($ch);
+$orderDetail = json_decode($orderStatusResponse);
+curl_close($ch);
+
+if ($orderDetail->status !== 'COMPLETED') {
+    echo json_encode(["success" => false, "message" => "Pagesa nuk u verifikua nga PayPal"]);
     exit;
 }
 
@@ -53,8 +78,7 @@ try {
 
     echo json_encode([
         "success" => true,
-        "activation_code" => $license,
-        "sandbox" => true
+        "activation_code" => $license
     ]);
 
 } catch (Exception $e) {
